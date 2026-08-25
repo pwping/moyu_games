@@ -84,17 +84,7 @@ npm run build
 
 `npm run build` 生成 `lib/index.js`（宿主，一个 cordis 插件）和 `lib/client.js`（浏览器端，交给 DSH 闭包工厂客户端包）。`npm run typecheck` 和 `npm test` 用于校验源码。
 
-## 配置
 
-所有字段都在 设置 → 「摸鱼游戏」（对应 `moyu-games` 设置命名空间）：
-
-| 字段 | 默认值 | 含义 |
-| --- | --- | --- |
-| `enabled` | `true` | 总开关。关闭后隐藏侧边栏入口和自动弹窗。 |
-| `autoPopup` | `true` | 任务/turn 开始时自动弹出窗口（窗口内自动/手动开关也写这里）。 |
-| `defaultSize` | `5` | 新窗口默认棋盘尺寸（默认 5x5；3x3 ~ 10x10）。 |
-| `popupDebounceMs` | `2000` | 任务开始广播之间的最小间隔（毫秒）。 |
-| `announceToAgent` | `true` | 是否在系统提示词中播报该插件。 |
 
 ## 安全模型
 
