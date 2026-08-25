@@ -35,7 +35,8 @@ export class GameController {
 
   /**
    * A task-start frame arrived (auto-popup path): open unless the user
-   * dismissed this very task. A new task id clears the dismissal.
+   * dismissed this very task. A new task id clears the dismissal. The caller
+   * (SSE handler) already gated on auto/manual mode, so this is the auto path.
    */
   onTaskStart(task: number): void {
     this.task = task
@@ -44,7 +45,8 @@ export class GameController {
     this.show()
   }
 
-  /** Open the window (manual entry). No-op if already open. */
+  /** Open the window (manual/footer entry). No-op if already open; always
+   * allowed — the manual path (sidebar button) must open even after a close. */
   show(): void {
     if (this.open) return
     this.open = true

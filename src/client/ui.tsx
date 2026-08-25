@@ -55,6 +55,11 @@ function clampSize(value: number | undefined, fallback = 5): number {
   return Math.min(10, Math.max(3, size))
 }
 
+/** Clamp `v` into [min, max]. */
+function clamp(v: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, v))
+}
+
 /* ---------------------------------------------- sidebar.footer.action row */
 
 type FooterFace = { controller: GameController }
@@ -92,35 +97,42 @@ export function FooterEntry(props: FooterEntryProps) {
 
 /* --------------------------------------------------- shell.overlay window */
 
-type OverlayFace = { controller: GameController; defaultSize: number }
+type OverlayFace = { controller: GameController; defaultSize: number; scope: SettingsScope<MoyuGamesSettings> }
 export type GameOverlayProps =
   PropsRuntime<'shell.overlay'>
   & InjectFace<OverlayFace>
   & PropsLocale<'moyu-games'>
 
-/** Clamp `v` into [min, max]. */
-function clamp(v: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, v))
-}
-
-/** The floating game window: anchored bottom-right, draggable by its header. */
+/**
+ * The floating game window: docked to the bottom-right corner and draggable by
+ * its header. The overlay wrapper is click-through so the task log underneath
+ * stays visible and usable (only the panel itself takes input). Each open
+ * re-anchors to the bottom-right corner; dragging moves it (clamped to the
+ * viewport) and it stays where you leave it until you close it.
+ */
 export function GameOverlay(props: GameOverlayProps) {
-  const { t, controller, defaultSize } = props
+  const { t, controller, defaultSize, scope } = props
   const open = useOpen(controller)
+  const scopeSnap = useScopeSnapshot(scope)
+  const auto = scopeSnap.value?.autoPopup ?? true
+  const writable = scopeSnap.writable
+  const toggleAuto = (): void => {
+    if (!writable) return
+    void scope.set('autoPopup', !auto)
+  }
   const [activeGame, setActiveGame] = useState<'puzzle' | 'schulte' | 'sudoku' | 'memory' | 'snake'>('puzzle')
 
   const modalRef = useRef<HTMLDivElement | null>(null)
-  /** Explicit window position; null = CSS anchor (bottom-right corner). */
-  const [pos, setPos] = useState<{ left: number; top: number } | null>(null)
-  const dragRef = useRef<{ sx: number; sy: number; left: number; top: number } | null>(null)
+  /** Drag offset from the default bottom-right anchor (0,0 = docked corner). */
+  const [drag, setDrag] = useState<{ dx: number; dy: number }>({ dx: 0, dy: 0 })
+  const dragRef = useRef<{
+    startX: number; startY: number; startDx: number; startDy: number; rect: DOMRect
+  } | null>(null)
 
   useEffect(() => {
-    if (!open) {
-      dragRef.current = null
-      return
-    }
-    // Re-anchor to the bottom-right corner every time the window opens.
-    setPos(null)
+    if (!open) return
+    // Re-anchor to the bottom-right corner each time the window opens.
+    setDrag({ dx: 0, dy: 0 })
     const onKey = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') controller.hide()
     }
@@ -133,19 +145,16 @@ export function GameOverlay(props: GameOverlayProps) {
     if ((event.target as HTMLElement).closest('button') !== null) return
     const rect = modalRef.current?.getBoundingClientRect()
     if (rect === undefined) return
-    dragRef.current = { sx: event.clientX, sy: event.clientY, left: rect.left, top: rect.top }
+    dragRef.current = { startX: event.clientX, startY: event.clientY, startDx: drag.dx, startDy: drag.dy, rect }
     event.currentTarget.setPointerCapture(event.pointerId)
   }
 
   const onHeaderPointerMove = (event: ReactPointerEvent<HTMLElement>): void => {
-    const drag = dragRef.current
-    if (drag === null) return
-    const w = modalRef.current?.offsetWidth ?? 0
-    const h = modalRef.current?.offsetHeight ?? 0
-    setPos({
-      left: clamp(drag.left + event.clientX - drag.sx, 0, Math.max(0, window.innerWidth - w)),
-      top: clamp(drag.top + event.clientY - drag.sy, 0, Math.max(0, window.innerHeight - h)),
-    })
+    const state = dragRef.current
+    if (state === null) return
+    const moveX = clamp(event.clientX - state.startX, 8 - state.rect.left, (window.innerWidth - 8) - state.rect.right)
+    const moveY = clamp(event.clientY - state.startY, 8 - state.rect.top, (window.innerHeight - 8) - state.rect.bottom)
+    setDrag({ dx: state.startDx + moveX, dy: state.startDy + moveY })
   }
 
   const endDrag = (): void => { dragRef.current = null }
@@ -157,7 +166,7 @@ export function GameOverlay(props: GameOverlayProps) {
         className="moyu-modal"
         role="dialog"
         aria-label={t('game.title')}
-        style={pos === null ? undefined : { left: pos.left, top: pos.top }}
+        style={{ transform: `translate(${drag.dx}px, ${drag.dy}px) scale(0.8)` }}
       >
         <header
           className="moyu-header"
@@ -169,11 +178,25 @@ export function GameOverlay(props: GameOverlayProps) {
           <div className="moyu-title-wrap">
             <h2 className="moyu-title">{t('game.title')}</h2>
           </div>
-          <button type="button" className="moyu-close" aria-label={t('game.close')} onClick={() => controller.hide()}>
-            <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-              <path d="M3.5 3.5l9 9M12.5 3.5l-9 9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-            </svg>
-          </button>
+          <div className="moyu-header-actions">
+            <button
+              type="button"
+              className={auto ? 'moyu-mode-btn moyu-mode-on' : 'moyu-mode-btn'}
+              role="switch"
+              aria-checked={auto}
+              disabled={!writable}
+              title={auto ? '自动：每次任务开始自动弹窗' : '手动：点侧边栏「摸鱼游戏」按钮打开'}
+              onClick={toggleAuto}
+            >
+              <span className="moyu-mode-switch" data-on={String(auto)} />
+              <span className="moyu-mode-label">{auto ? '自动' : '手动'}</span>
+            </button>
+            <button type="button" className="moyu-close" aria-label={t('game.close')} onClick={() => controller.hide()}>
+              <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+                <path d="M3.5 3.5l9 9M12.5 3.5l-9 9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+              </svg>
+            </button>
+          </div>
         </header>
         <div className="moyu-game-tabs" role="tablist">
           <button
@@ -187,15 +210,6 @@ export function GameOverlay(props: GameOverlayProps) {
           </button>
           <button
             type="button"
-            className={activeGame === 'schulte' ? 'moyu-game-tab-active' : 'moyu-game-tab'}
-            role="tab"
-            aria-selected={activeGame === 'schulte'}
-            onClick={() => setActiveGame('schulte')}
-          >
-            舒尔特方格
-          </button>
-          <button
-            type="button"
             role="tab"
             className={activeGame === 'sudoku' ? 'moyu-game-tab-active' : 'moyu-game-tab'}
             onClick={() => setActiveGame('sudoku')}
@@ -206,31 +220,40 @@ export function GameOverlay(props: GameOverlayProps) {
           <button
             type="button"
             role="tab"
-            className={activeGame === 'memory' ? 'moyu-game-tab-active' : 'moyu-game-tab'}
-            onClick={() => setActiveGame('memory')}
-            aria-selected={activeGame === 'memory'}
-          >
-            数字记忆
-          </button>
-          <button
-            type="button"
-            role="tab"
             className={activeGame === 'snake' ? 'moyu-game-tab-active' : 'moyu-game-tab'}
             onClick={() => setActiveGame('snake')}
             aria-selected={activeGame === 'snake'}
           >
             贪吃蛇
           </button>
+          <button
+            type="button"
+            role="tab"
+            className={activeGame === 'schulte' ? 'moyu-game-tab-active' : 'moyu-game-tab'}
+            onClick={() => setActiveGame('schulte')}
+            aria-selected={activeGame === 'schulte'}
+          >
+            舒尔特方格
+          </button>
+          <button
+            type="button"
+            role="tab"
+            className={activeGame === 'memory' ? 'moyu-game-tab-active' : 'moyu-game-tab'}
+            onClick={() => setActiveGame('memory')}
+            aria-selected={activeGame === 'memory'}
+          >
+            数字记忆
+          </button>
         </div>
         {activeGame === 'puzzle'
           ? <SlidingPuzzle t={t} defaultSize={defaultSize} />
-          : activeGame === 'schulte'
-            ? <SchulteGrid t={t} defaultSize={defaultSize} />
-            : activeGame === 'sudoku'
-              ? <SudokuBoard t={t} />
-              : activeGame === 'memory'
-                ? <MemoryGrid t={t} />
-                : <SnakeGame t={t} />
+          : activeGame === 'sudoku'
+            ? <SudokuBoard t={t} />
+            : activeGame === 'snake'
+              ? <SnakeGame t={t} />
+              : activeGame === 'schulte'
+                ? <SchulteGrid t={t} defaultSize={defaultSize} />
+                : <MemoryGrid t={t} />
         }
       </div>
     </div>
@@ -335,16 +358,12 @@ export function SlidingPuzzle({ t, defaultSize = 5 }: SlidingPuzzleProps) {
         <div className="moyu-grid" style={{ ['--moyu-cols' as string]: String(size) }} data-dsh-moyu-board={String(size)}>
           {board.map((value, index) => {
             if (value === 0) return <div key={index} className="moyu-empty" aria-hidden="true" />
-            const movable = canSlide(board, index, size)
-            const hue = Math.round((value / (size * size - 1)) * 300)
             return (
               <button
                 key={index}
                 type="button"
-                className={movable ? 'moyu-tile-movable' : 'moyu-tile'}
-                style={{ ['--moyu-hue' as string]: String(hue) }}
+                className="moyu-tile"
                 onClick={() => onTile(index)}
-                disabled={!movable}
                 aria-label={String(value)}
               >
                 {value}
@@ -450,7 +469,7 @@ export function SchulteGrid({ t, defaultSize = 5 }: SlidingPuzzleProps) {
         <div className="moyu-stats-center">
           <div className={hint ? 'moyu-stat moyu-stat-bump' : 'moyu-stat'}>
             <span className="moyu-stat-label">下一个数</span>
-            <span className={hint ? 'moyu-stat-value moyu-stat-red' : 'moyu-stat-value'}>
+            <span className={hint ? 'moyu-stat-value moyu-stat-hint' : 'moyu-stat-value'}>
               {board.completed ? '—' : board.currentTarget}
             </span>
           </div>
@@ -604,7 +623,7 @@ export function SudokuBoard({ t }: { t: LocaleReader }) {
         </button>
       </div>
 
-      <p className="moyu-hint">规则：填入1-9，每行每列每宫格不重复</p>
+      <p className="moyu-hint">规则：填入数字1-9，每行每列每个9宫格数字都不重复</p>
 
       <div className="moyu-sudoku-grid" tabIndex={0} onKeyDown={onKeyDown}>
         {board.cells.map((cell, index) => {

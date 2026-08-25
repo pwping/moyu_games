@@ -11,6 +11,7 @@ describe('GameController', () => {
     expect(controller.getSnapshot().open).toBe(true)
     controller.hide()
     expect(controller.getSnapshot().open).toBe(false)
+    // toggle() after a manual close opens again (manual path is always allowed).
     controller.toggle()
     expect(controller.getSnapshot().open).toBe(true)
     controller.toggle()
@@ -22,7 +23,10 @@ describe('GameController', () => {
     const seen: boolean[] = []
     const unsubscribe = controller.subscribe(() => seen.push(controller.getSnapshot().open))
     controller.show()
+    expect(seen).toEqual([true])
     controller.hide()
+    expect(seen).toEqual([true, false])
+    // Manual open after a manual close is allowed -> notifies.
     controller.show()
     expect(seen).toEqual([true, false, true])
     unsubscribe()
@@ -32,35 +36,36 @@ describe('GameController', () => {
 })
 
 describe('GameController task-start auto-open', () => {
-  it('auto-opens on task-start and suppresses after manual close until the next task', () => {
+  it('auto-opens on task-start, then suppresses the SAME task after a manual close', () => {
     const controller = new GameController()
     controller.onTaskStart(1)
     expect(controller.getSnapshot().open).toBe(true)
     controller.hide()
-    controller.onTaskStart(1) // same task (e.g. a debounced trailing frame)
+    // Same task (a debounced trailing frame / repeated signal) -> stays closed.
+    controller.onTaskStart(1)
     expect(controller.getSnapshot().open).toBe(false)
-    controller.onTaskStart(2) // next task
+    // Next task -> opens again.
+    controller.onTaskStart(2)
     expect(controller.getSnapshot().open).toBe(true)
   })
 
-  it('manual show still works while the current task is dismissed', () => {
+  it('allows MANUAL open (sidebar button) even after a manual close', () => {
     const controller = new GameController()
     controller.onTaskStart(1)
     controller.hide()
     controller.show()
+    // The manual path is always allowed — it opens regardless of dismissal.
     expect(controller.getSnapshot().open).toBe(true)
-    controller.hide()
-    controller.onTaskStart(1)
-    expect(controller.getSnapshot().open).toBe(false)
   })
 
-  it('dismissal does not leak into the next task after manual re-open', () => {
+  it('does not leak dismissal into the next task', () => {
     const controller = new GameController()
     controller.onTaskStart(1)
-    controller.hide()
-    controller.show()
     controller.hide()
     controller.onTaskStart(2)
+    expect(controller.getSnapshot().open).toBe(true)
+    controller.hide()
+    controller.onTaskStart(3)
     expect(controller.getSnapshot().open).toBe(true)
   })
 })

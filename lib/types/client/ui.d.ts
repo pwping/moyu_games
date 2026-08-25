@@ -27,9 +27,16 @@ export declare function FooterEntry(props: FooterEntryProps): import("react").JS
 type OverlayFace = {
     controller: GameController;
     defaultSize: number;
+    scope: SettingsScope<MoyuGamesSettings>;
 };
 export type GameOverlayProps = PropsRuntime<'shell.overlay'> & InjectFace<OverlayFace> & PropsLocale<'moyu-games'>;
-/** The floating game window: anchored bottom-right, draggable by its header. */
+/**
+ * The floating game window: docked to the bottom-right corner and draggable by
+ * its header. The overlay wrapper is click-through so the task log underneath
+ * stays visible and usable (only the panel itself takes input). Each open
+ * re-anchors to the bottom-right corner; dragging moves it (clamped to the
+ * viewport) and it stays where you leave it until you close it.
+ */
 export declare function GameOverlay(props: GameOverlayProps): import("react").JSX.Element;
 /** The puzzle board's locale reader (the namespace-bound translate). */
 type LocaleReader = TranslateNS<'moyu-games'>;

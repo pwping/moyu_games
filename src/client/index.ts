@@ -92,7 +92,7 @@ export function apply(ctx: ClientContext): void {
     id: 'moyu-games',
     order: 50,
     locale: NS,
-    inject: () => ({ controller, defaultSize: defaultSize() }),
+    inject: () => ({ controller, defaultSize: defaultSize(), scope: settingsScope }),
   }, GameOverlay))
 
   // Settings page over the `moyu-games` namespace.
