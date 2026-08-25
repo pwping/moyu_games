@@ -43,15 +43,18 @@ type LocaleReader = TranslateNS<'moyu-games'>;
 /** Props for the puzzle board. */
 export interface SlidingPuzzleProps {
     t: LocaleReader;
+    /** Whether the floating window is open (false → pause the timer). */
+    open?: boolean;
     defaultSize?: number;
 }
-/** The digital Huarong Road board. State stays in this always-mounted component. */
-export declare function SlidingPuzzle({ t, defaultSize }: SlidingPuzzleProps): import("react").JSX.Element;
+/** The digital Huarong Road board. State is persisted to localStorage. */
+export declare function SlidingPuzzle({ t, open, defaultSize }: SlidingPuzzleProps): import("react").JSX.Element;
 /** 舒尔特方格：按 1,2,3… 顺序依次点击。 */
-export declare function SchulteGrid({ t, defaultSize }: SlidingPuzzleProps): import("react").JSX.Element;
+export declare function SchulteGrid({ t, open, defaultSize }: SlidingPuzzleProps): import("react").JSX.Element;
 /** 9×9 数独棋盘。 */
-export declare function SudokuBoard({ t }: {
+export declare function SudokuBoard({ t, open }: {
     t: LocaleReader;
+    open?: boolean;
 }): import("react").JSX.Element;
 type SectionFace = {
     scope: SettingsScope<MoyuGamesSettings>;

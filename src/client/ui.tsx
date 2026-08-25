@@ -30,6 +30,53 @@ export interface MoyuGamesSettings {
 
 /* ------------------------------------------------------------------ hooks */
 
+const PERSIST_PREFIX = 'moyu-games:'
+
+/**
+ * Like useState, but the value is mirrored to localStorage so it survives
+ * page refreshes. The first render reads from localStorage (falling back to
+ * `initial`); every change writes back. JSON-only — callers must serialise
+ * non-JSON-safe fields (e.g. Set) before storing.
+ */
+function usePersistedState<T>(key: string, initial: T | (() => T)): [T, (v: T | ((prev: T) => T)) => void] {
+  const fullKey = PERSIST_PREFIX + key
+  const [state, setState] = useState<T>(() => {
+    try {
+      const raw = localStorage.getItem(fullKey)
+      if (raw !== null) return JSON.parse(raw) as T
+    } catch { /* ignore corrupt entries */ }
+    return typeof initial === 'function' ? (initial as () => T)() : initial
+  })
+  useEffect(() => {
+    try { localStorage.setItem(fullKey, JSON.stringify(state)) } catch { /* quota / private mode */ }
+  }, [fullKey, state])
+  return [state, setState]
+}
+
+/** Stable game ids. */
+type GameId = 'puzzle' | 'schulte' | 'sudoku' | 'memory' | 'snake'
+
+/** localStorage key suffixes (under PERSIST_PREFIX) each game owns. */
+const GAME_KEYS: Record<GameId, readonly string[]> = {
+  puzzle: ['puzzle:size', 'puzzle:board', 'puzzle:moves', 'puzzle:elapsedMs', 'puzzle:running'],
+  schulte: ['schulte:size', 'schulte:board', 'schulte:elapsedMs', 'schulte:running'],
+  sudoku: ['sudoku:board', 'sudoku:elapsedMs', 'sudoku:running'],
+  memory: ['memory:board', 'memory:elapsedMs', 'memory:running'],
+  snake: ['snake:state', 'snake:score', 'snake:gameOver', 'snake:started'],
+}
+
+/**
+ * Remove a game's stored state. The active game keeps writing (via
+ * usePersistedState) while it is mounted, so the game open when the window
+ * closes is the only one that survives; clearing a game when you switch away
+ * guarantees switching back to it starts a brand-new round.
+ */
+function clearGameKeys(game: GameId): void {
+  for (const key of GAME_KEYS[game]) {
+    try { localStorage.removeItem(PERSIST_PREFIX + key) } catch { /* ignore */ }
+  }
+}
+
 /** Subscribe to a controller's open state. */
 function useOpen(controller: GameController): boolean {
   const [open, setOpen] = useState(() => controller.getSnapshot().open)
@@ -120,7 +167,15 @@ export function GameOverlay(props: GameOverlayProps) {
     if (!writable) return
     void scope.set('autoPopup', !auto)
   }
-  const [activeGame, setActiveGame] = useState<'puzzle' | 'schulte' | 'sudoku' | 'memory' | 'snake'>('puzzle')
+  const [activeGame, setActiveGame] = usePersistedState<GameId>('activeGame', 'puzzle')
+
+  // Switching to another game discards the one we're leaving (state cleared),
+  // so returning to it later always starts a fresh round.
+  const changeGame = (next: GameId): void => {
+    if (next === activeGame) return
+    clearGameKeys(activeGame)
+    setActiveGame(next)
+  }
 
   const modalRef = useRef<HTMLDivElement | null>(null)
   /** Drag offset from the default bottom-right anchor (0,0 = docked corner). */
@@ -185,7 +240,7 @@ export function GameOverlay(props: GameOverlayProps) {
               role="switch"
               aria-checked={auto}
               disabled={!writable}
-              title={auto ? '自动：每次任务开始自动弹窗' : '手动：点侧边栏「摸鱼游戏」按钮打开'}
+              title={auto ? '每次任务开始自动打开摸鱼游戏' : '需要手动点击左下角的摸鱼游戏按钮打开游戏界面'}
               onClick={toggleAuto}
             >
               <span className="moyu-mode-switch" data-on={String(auto)} />
@@ -204,7 +259,7 @@ export function GameOverlay(props: GameOverlayProps) {
             className={activeGame === 'puzzle' ? 'moyu-game-tab-active' : 'moyu-game-tab'}
             role="tab"
             aria-selected={activeGame === 'puzzle'}
-            onClick={() => setActiveGame('puzzle')}
+            onClick={() => changeGame('puzzle')}
           >
             数字华容道
           </button>
@@ -212,7 +267,7 @@ export function GameOverlay(props: GameOverlayProps) {
             type="button"
             role="tab"
             className={activeGame === 'sudoku' ? 'moyu-game-tab-active' : 'moyu-game-tab'}
-            onClick={() => setActiveGame('sudoku')}
+            onClick={() => changeGame('sudoku')}
             aria-selected={activeGame === 'sudoku'}
           >
             数独
@@ -221,7 +276,7 @@ export function GameOverlay(props: GameOverlayProps) {
             type="button"
             role="tab"
             className={activeGame === 'snake' ? 'moyu-game-tab-active' : 'moyu-game-tab'}
-            onClick={() => setActiveGame('snake')}
+            onClick={() => changeGame('snake')}
             aria-selected={activeGame === 'snake'}
           >
             贪吃蛇
@@ -230,7 +285,7 @@ export function GameOverlay(props: GameOverlayProps) {
             type="button"
             role="tab"
             className={activeGame === 'schulte' ? 'moyu-game-tab-active' : 'moyu-game-tab'}
-            onClick={() => setActiveGame('schulte')}
+            onClick={() => changeGame('schulte')}
             aria-selected={activeGame === 'schulte'}
           >
             舒尔特方格
@@ -239,21 +294,21 @@ export function GameOverlay(props: GameOverlayProps) {
             type="button"
             role="tab"
             className={activeGame === 'memory' ? 'moyu-game-tab-active' : 'moyu-game-tab'}
-            onClick={() => setActiveGame('memory')}
+            onClick={() => changeGame('memory')}
             aria-selected={activeGame === 'memory'}
           >
             数字记忆
           </button>
         </div>
         {activeGame === 'puzzle'
-          ? <SlidingPuzzle t={t} defaultSize={defaultSize} />
+          ? <SlidingPuzzle t={t} open={open} defaultSize={defaultSize} />
           : activeGame === 'sudoku'
-            ? <SudokuBoard t={t} />
+            ? <SudokuBoard t={t} open={open} />
             : activeGame === 'snake'
-              ? <SnakeGame t={t} />
+              ? <SnakeGame t={t} open={open} />
               : activeGame === 'schulte'
-                ? <SchulteGrid t={t} defaultSize={defaultSize} />
-                : <MemoryGrid t={t} />
+                ? <SchulteGrid t={t} open={open} defaultSize={defaultSize} />
+                : <MemoryGrid t={t} open={open} />
         }
       </div>
     </div>
@@ -268,39 +323,36 @@ type LocaleReader = TranslateNS<'moyu-games'>
 /** Props for the puzzle board. */
 export interface SlidingPuzzleProps {
   t: LocaleReader
+  /** Whether the floating window is open (false → pause the timer). */
+  open?: boolean
   defaultSize?: number
 }
 
-/** The digital Huarong Road board. State stays in this always-mounted component. */
-export function SlidingPuzzle({ t, defaultSize = 5 }: SlidingPuzzleProps) {
+/** The digital Huarong Road board. State is persisted to localStorage. */
+export function SlidingPuzzle({ t, open = true, defaultSize = 5 }: SlidingPuzzleProps) {
   const initialSize = clampSize(defaultSize)
-  const [size, setSize] = useState<number>(initialSize)
-  const [board, setBoard] = useState<Board>(() => moveBlankToBottomRight(shuffledBoard(initialSize), initialSize))
-  const [moves, setMoves] = useState(0)
-  const [startAt, setStartAt] = useState<number | null>(null)
-  const [now, setNow] = useState(0)
-  const [finishedAt, setFinishedAt] = useState<number | null>(null)
+  const [size, setSize] = usePersistedState<number>('puzzle:size', initialSize)
+  const [board, setBoard] = usePersistedState<Board>('puzzle:board', () => moveBlankToBottomRight(shuffledBoard(initialSize), initialSize))
+  const [moves, setMoves] = usePersistedState<number>('puzzle:moves', 0)
+  const [elapsedMs, setElapsedMs] = usePersistedState<number>('puzzle:elapsedMs', 0)
+  const [running, setRunning] = usePersistedState<boolean>('puzzle:running', false)
 
   const solved = isSolved(board)
+  const paused = !open || !running || solved
 
   useEffect(() => {
-    if (solved && startAt !== null && finishedAt === null) setFinishedAt(Date.now())
-  }, [solved, startAt, finishedAt])
-
-  useEffect(() => {
-    if (startAt === null || solved) return
-    const id = window.setInterval(() => setNow(Date.now()), 1000)
+    if (paused) return
+    const id = window.setInterval(() => setElapsedMs((m) => m + 1000), 1000)
     return () => window.clearInterval(id)
-  }, [startAt, solved])
+  }, [paused, setElapsedMs])
 
   const startNew = (nextSize: number): void => {
     const s = clampSize(nextSize)
     setSize(s)
     setBoard(moveBlankToBottomRight(shuffledBoard(s), s))
     setMoves(0)
-    setStartAt(null)
-    setNow(0)
-    setFinishedAt(null)
+    setElapsedMs(0)
+    setRunning(false)
   }
 
   const onTile = (index: number): void => {
@@ -308,12 +360,8 @@ export function SlidingPuzzle({ t, defaultSize = 5 }: SlidingPuzzleProps) {
     if (!canSlide(board, index, size)) return
     setBoard(applySlide(board, index, size))
     setMoves((m) => m + 1)
-    if (startAt === null) setStartAt(Date.now())
+    if (!running) setRunning(true)
   }
-
-  const elapsedMs = finishedAt !== null
-    ? finishedAt - (startAt ?? finishedAt)
-    : startAt !== null ? now - startAt : 0
 
   return (
     <div className="moyu-board">
@@ -387,27 +435,22 @@ export function SlidingPuzzle({ t, defaultSize = 5 }: SlidingPuzzleProps) {
 /* ----------------------------------------------------------- schulte grid */
 
 /** 舒尔特方格：按 1,2,3… 顺序依次点击。 */
-export function SchulteGrid({ t, defaultSize = 5 }: SlidingPuzzleProps) {
+export function SchulteGrid({ t, open = true, defaultSize = 5 }: SlidingPuzzleProps) {
   const initialSize = clampSize(defaultSize)
-  const [size, setSize] = useState<number>(initialSize)
-  const [board, setBoard] = useState<SchulteBoard>(() => createSchulteBoard(initialSize))
-  const [startAt, setStartAt] = useState<number | null>(null)
-  const [now, setNow] = useState(0)
-  const [finishedAt, setFinishedAt] = useState<number | null>(null)
+  const [size, setSize] = usePersistedState<number>('schulte:size', initialSize)
+  const [board, setBoard] = usePersistedState<SchulteBoard>('schulte:board', () => createSchulteBoard(initialSize))
+  const [elapsedMs, setElapsedMs] = usePersistedState<number>('schulte:elapsedMs', 0)
+  const [running, setRunning] = usePersistedState<boolean>('schulte:running', false)
   const [hint, setHint] = useState<string | null>(null)
   const hintTimer = useRef<number | null>(null)
 
-  useEffect(() => {
-    if (board.completed && startAt !== null && finishedAt === null) {
-      setFinishedAt(Date.now())
-    }
-  }, [board.completed, startAt, finishedAt])
+  const paused = !open || !running || board.completed
 
   useEffect(() => {
-    if (startAt === null || board.completed) return
-    const id = window.setInterval(() => setNow(Date.now()), 1000)
+    if (paused) return
+    const id = window.setInterval(() => setElapsedMs((m) => m + 1000), 1000)
     return () => window.clearInterval(id)
-  }, [startAt, board.completed])
+  }, [paused, setElapsedMs])
 
   const clearHintTimer = (): void => {
     if (hintTimer.current !== null) {
@@ -421,9 +464,8 @@ export function SchulteGrid({ t, defaultSize = 5 }: SlidingPuzzleProps) {
     const s = clampSize(nextSize)
     setSize(s)
     setBoard(createSchulteBoard(s))
-    setStartAt(null)
-    setNow(0)
-    setFinishedAt(null)
+    setElapsedMs(0)
+    setRunning(false)
     setHint(null)
   }
 
@@ -440,12 +482,8 @@ export function SchulteGrid({ t, defaultSize = 5 }: SlidingPuzzleProps) {
       return
     }
     setBoard(result)
-    if (startAt === null) setStartAt(Date.now())
+    if (!running) setRunning(true)
   }
-
-  const elapsedMs = finishedAt !== null
-    ? finishedAt - (startAt ?? finishedAt)
-    : startAt !== null ? now - startAt : 0
 
   return (
     <div className="moyu-board">
@@ -522,29 +560,40 @@ export function SchulteGrid({ t, defaultSize = 5 }: SlidingPuzzleProps) {
 /* ------------------------------------------------------------- sudoku board */
 
 /** 9×9 数独棋盘。 */
-export function SudokuBoard({ t }: { t: LocaleReader }) {
-  const [board, setBoard] = useState<SudokuBoard>(() => createSudokuBoard())
-  const [startAt, setStartAt] = useState<number | null>(null)
-  const [now, setNow] = useState(0)
-  const [finishedAt, setFinishedAt] = useState<number | null>(null)
+export function SudokuBoard({ t, open = true }: { t: LocaleReader; open?: boolean }) {
+  // board 含 Set 字段（correctOnce/wrongOnce），JSON 无法直接序列化：mount 时
+  // 从 localStorage 读回（补空 Set），变化时写回（丢 Set 字段）。
+  const [board, setBoard] = useState<SudokuBoard>(() => {
+    try {
+      const raw = localStorage.getItem(PERSIST_PREFIX + 'sudoku:board')
+      if (raw !== null) {
+        const parsed = JSON.parse(raw)
+        return { ...parsed, correctOnce: new Set<number>(), wrongOnce: new Set<number>() }
+      }
+    } catch { /* ignore */ }
+    return createSudokuBoard()
+  })
+  useEffect(() => {
+    try {
+      const { correctOnce: _c, wrongOnce: _w, ...serial } = board
+      localStorage.setItem(PERSIST_PREFIX + 'sudoku:board', JSON.stringify(serial))
+    } catch { /* ignore */ }
+  }, [board])
+  const [elapsedMs, setElapsedMs] = usePersistedState<number>('sudoku:elapsedMs', 0)
+  const [running, setRunning] = usePersistedState<boolean>('sudoku:running', false)
+
+  const paused = !open || !running || board.completed
 
   useEffect(() => {
-    if (board.completed && startAt !== null && finishedAt === null) {
-      setFinishedAt(Date.now())
-    }
-  }, [board.completed, startAt, finishedAt])
-
-  useEffect(() => {
-    if (startAt === null || board.completed) return
-    const id = window.setInterval(() => setNow(Date.now()), 1000)
+    if (paused) return
+    const id = window.setInterval(() => setElapsedMs((m) => m + 1000), 1000)
     return () => window.clearInterval(id)
-  }, [startAt, board.completed])
+  }, [paused, setElapsedMs])
 
   const startNew = (): void => {
     setBoard(createSudokuBoard())
-    setStartAt(null)
-    setNow(0)
-    setFinishedAt(null)
+    setElapsedMs(0)
+    setRunning(false)
   }
 
   const onCell = (index: number): void => {
@@ -554,7 +603,7 @@ export function SudokuBoard({ t }: { t: LocaleReader }) {
   const onNum = (num: number): void => {
     setBoard((b) => {
       const nb = inputNumber(b, num)
-      if (nb !== b && startAt === null) setStartAt(Date.now())
+      if (nb !== b && !running) setRunning(true)
       return nb
     })
   }
@@ -570,7 +619,7 @@ export function SudokuBoard({ t }: { t: LocaleReader }) {
   const onHint = (): void => {
     setBoard((b) => {
       const nb = getHint(b)
-      if (nb !== b && startAt === null) setStartAt(Date.now())
+      if (nb !== b && !running) setRunning(true)
       return nb
     })
   }
@@ -593,10 +642,6 @@ export function SudokuBoard({ t }: { t: LocaleReader }) {
       onToggleNote()
     }
   }, [board.completed, onNum, onErase, onToggleNote])
-
-  const elapsedMs = finishedAt !== null
-    ? finishedAt - (startAt ?? finishedAt)
-    : startAt !== null ? now - startAt : 0
 
   return (
     <div className="moyu-board">
@@ -702,33 +747,36 @@ export function SudokuBoard({ t }: { t: LocaleReader }) {
 }
 
 /** 数字记忆：6×6 棋盘，记住数字位置按顺序点击。 */
-function MemoryGrid(props: { t: TranslateNS<'moyu-games'> }) {
-  const { t } = props
-  const [board, setBoard] = useState<MemoryBoard>(() => createMemoryBoard(3))
-  const [startAt, setStartAt] = useState<number | null>(null)
-  const [now, setNow] = useState(Date.now())
+function MemoryGrid(props: { t: TranslateNS<'moyu-games'>; open?: boolean }) {
+  const { t, open = true } = props
+  const [board, setBoard] = usePersistedState<MemoryBoard>('memory:board', () => createMemoryBoard(3))
+  const [elapsedMs, setElapsedMs] = usePersistedState<number>('memory:elapsedMs', 0)
+  const [running, setRunning] = usePersistedState<boolean>('memory:running', false)
+
+  const paused = !open || !running
 
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(id)
-  }, [])
-
-  const elapsedMs = startAt !== null ? now - startAt : 0
+    if (paused) return
+    const id = window.setInterval(() => setElapsedMs((m) => m + 1000), 1000)
+    return () => window.clearInterval(id)
+  }, [paused, setElapsedMs])
 
   const startNew = (): void => {
     setBoard(createMemoryBoard(3, 0))
-    setStartAt(null)
+    setElapsedMs(0)
+    setRunning(false)
   }
 
   const onCell = (index: number): void => {
     setBoard((b) => {
       const nb = clickMemoryCell(b, index)
       if (!b.started && nb.started) {
-        setStartAt(Date.now())
+        setRunning(true)
       }
       // 达到上限完全重置时才重置时间；普通错误或阶段完成保持时间
       if (nb.errorCount === 0 && b.errorCount > 0) {
-        setStartAt(null)
+        setElapsedMs(0)
+        setRunning(false)
       }
       return nb
     })
@@ -788,19 +836,36 @@ function MemoryGrid(props: { t: TranslateNS<'moyu-games'> }) {
 function lerp(a: number, b: number, t: number): number { return a + (b - a) * t }
 
 /** 贪吃蛇：右下角弹窗内 Canvas 渲染，方格蛇+彩色圆点食物。 */
-function SnakeGame({ t }: { t: LocaleReader }) {
+function SnakeGame({ t, open = true }: { t: LocaleReader; open?: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const gameRef = useRef<SnakeState>(createSnakeGame())
+  const SNAKE_KEY = PERSIST_PREFIX + 'snake:state'
+  const gameRef = useRef<SnakeState>(null as unknown as SnakeState)
+  if (gameRef.current === null) {
+    try {
+      const raw = localStorage.getItem(SNAKE_KEY)
+      gameRef.current = raw !== null ? JSON.parse(raw) as SnakeState : createSnakeGame()
+    } catch { gameRef.current = createSnakeGame() }
+  }
   const prevSnakeRef = useRef<Point[]>(gameRef.current.snake)
   const lastTickRef = useRef<number>(0)
   const rafRef = useRef<number>(0)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const startedRef = useRef(false)
-  const [score, setScore] = useState(0)
-  const [gameOver, setGameOver] = useState(false)
-  const [started, setStarted] = useState(false)
+  const [score, setScore] = usePersistedState<number>('snake:score', 0)
+  const [gameOver, setGameOver] = usePersistedState<boolean>('snake:gameOver', false)
+  const [started, setStarted] = usePersistedState<boolean>('snake:started', false)
+
+  // 同步 startedRef 给 tick loop 用（避免闭包陷阱）
+  useEffect(() => { startedRef.current = started }, [started])
 
   const TICK_MS = 200
+
+  // 持久化蛇状态：open 变 false 或 score/gameOver 变化时写一次
+  const persistSnake = useCallback((): void => {
+    try { localStorage.setItem(SNAKE_KEY, JSON.stringify(gameRef.current)) } catch { /* ignore */ }
+  }, [SNAKE_KEY])
+  useEffect(() => { persistSnake() }, [score, gameOver, started, persistSnake])
+  useEffect(() => { if (!open) persistSnake() }, [open, persistSnake])
 
   const restart = useCallback((): void => {
     gameRef.current = createSnakeGame()
@@ -810,10 +875,11 @@ function SnakeGame({ t }: { t: LocaleReader }) {
     setScore(0)
     setGameOver(false)
     setStarted(false)
-  }, [])
+  }, [setScore, setGameOver, setStarted])
 
-  // Game tick loop
+  // Game tick loop — 暂停于浮窗关闭
   useEffect(() => {
+    if (!open) return
     const onTick = (): void => {
       const g = gameRef.current
       if (g.gameOver || g.won) return
@@ -827,10 +893,11 @@ function SnakeGame({ t }: { t: LocaleReader }) {
     }
     intervalRef.current = setInterval(onTick, TICK_MS)
     return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
-  }, [score])
+  }, [open, score, setScore, setGameOver])
 
-  // Keyboard
+  // Keyboard — 仅在浮窗打开时响应
   useEffect(() => {
+    if (!open) return
     const onKey = (e: KeyboardEvent): void => {
       let dir: SnakeDir | null = null
       switch (e.key) {
@@ -851,7 +918,7 @@ function SnakeGame({ t }: { t: LocaleReader }) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  }, [open, setStarted])
 
   // Mouse
   useEffect(() => {
