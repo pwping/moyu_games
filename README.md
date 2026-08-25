@@ -1,10 +1,21 @@
 # moyu-games
 
-DeepSeek Harness（DSH）的「摸鱼」小游戏插件。任务执行（一个 turn 或 step 启动）时，屏幕**右下角**会弹出小游戏窗口，让你在 agent 干活的同时摸一摸鱼。窗口默认贴右下角、整体 80% 大小、可按住标题栏拖动；下层遮罩可点击穿透，所以不会挡住正在输出的任务消息。
+DeepSeek Harness（DSH）的「摸鱼」小游戏插件。任务执行（一个 turn 或 step 启动）时，屏幕**右下角**会弹出小游戏窗口，让你在 agent 干活的同时摸一摸鱼。窗口默认贴右下角、可按住标题栏拖动。
+
+<img src="images/1.png" alt="摸鱼游戏：右下角自动弹出的数字华容道窗口" width="100%" />
 
 这是一个**独立的 DSH Web 插件**。它只使用官方 `@deepseek-ai/*` SDK 和官方 shell 槽位（`sidebar.footer.action`、`shell.overlay`、`settings.section`），不依赖任何插件族或 monorepo，**任何人都可以安装**。
 
-整体视觉使用**微信绿**（`#07C160`）主题，5 款小游戏统一配色。
+整体视觉使用**微信绿**（`#07C160`）主题，包含5款小游戏。
+
+## 截图
+<div style="display:flex; gap:6px; align-items:flex-start;">
+  <img src="images/2.png" alt="数字华容道" style="flex:1; min-width:0;" />
+  <img src="images/3.png" alt="数独" style="flex:1; min-width:0;" />
+  <img src="images/4.png" alt="贪吃蛇" style="flex:1; min-width:0;" />
+  <img src="images/5.png" alt="舒尔特方格" style="flex:1; min-width:0;" />
+  <img src="images/6.png" alt="数字记忆" style="flex:1; min-width:0;" />
+</div>
 
 ## 功能
 
@@ -25,23 +36,44 @@ DeepSeek Harness（DSH）的「摸鱼」小游戏插件。任务执行（一个 
 
 ## 安装
 
-已构建的 `lib/` 已提交，安装无需构建。
+### 前置条件
 
-### 从本地目录
+- **Node.js** `^22.19.0` 或 `>=24.0.0`（用于构建；仅安装使用已构建的 `lib/` 不强制要求）
+- **DeepSeek Harness（DSH）** 已安装且 `dsh` 命令可用（`dsh --version` 能输出版本号）
+
+### 方式一：给 Agent 的精简安装指令
+
+> 这是插件仓库地址:`https://github.com/pwping/moyu_games` 帮我安装。
+
+
+### 方式二：从本仓库 clone 后安装（推荐，本地开发或自用）
 
 ```sh
-dsh plugin --profile web add E:/Vibe_CODE/moyu_games
-# 或者，如果 `dsh` 在 PATH 上且使用默认 profile：
-dsh plugin add ./moyu_games
+# 1. 克隆仓库到任意目录
+git clone https://github.com/pwping/moyu_games.git
+cd moyu_games
+
+# 2.（可选）如需从源码重新构建，安装依赖并构建
+#    仓库已提交构建产物 lib/，跳过此步也能直接安装
+npm install
+npm run build
+
+# 3. 用 dsh 注册本插件（指向仓库根目录的绝对路径）
+dsh plugin --profile web add /absolute/path/to/moyu_games
+# Windows 示例：
+# dsh plugin --profile web add E:/Vibe_CODE/moyu_games
+
+# 4. 重启 dsh web 使插件加载
+dsh web
+# 若已在运行，先停止再重启：Ctrl+C 后重新执行 dsh web
 ```
 
-### 发布到 npm 后
+安装完成后：
+- 侧边栏底部「设置」旁出现「摸鱼游戏」行
+- 自动模式下，任务（turn/step）开始时右下角自动弹出游戏窗口
+- 设置 → 「摸鱼游戏」页可调整总开关 / 自动弹窗 / 默认棋盘大小
 
-```sh
-dsh plugin --profile web add <your-npm-scope>/moyu-games
-```
 
-重启 `dsh web`。侧边栏底部「设置」旁会出现「摸鱼游戏」行；任务开始（自动模式）时在右下角弹出游戏窗口。
 
 ## 构建（仅在修改源码时需要）
 
@@ -77,4 +109,4 @@ npm run build
 
 ## License
 
-Apache-2.0。
+MIT。
