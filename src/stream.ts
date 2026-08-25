@@ -22,8 +22,20 @@ export interface TaskStartFrame {
   at: number
 }
 
+/** A task-end frame written to the SSE stream when the current turn finishes. */
+export interface TaskEndFrame {
+  type: 'task-end'
+  /** The same monotonic task id the matching start frame carried. */
+  task: number
+  /** `completed` = normal end; anything else (error / aborted / ...) still counts. */
+  reason: string
+  at: number
+}
+
 /** Name of the SSE "task-start" event. */
 export const TASK_START_EVENT = 'task-start'
+/** Name of the SSE "task-end" event. */
+export const TASK_END_EVENT = 'task-end'
 
 /** Relative path of the SSE endpoint the browser connects to. */
 export const EVENTS_PATH = '/api/moyu-games/events'
@@ -48,6 +60,12 @@ export class TaskStartBroadcaster {
       // turn/start opens a new task; the turn's step/starts belong to it.
       if (event.type === 'turn/start') this.task += 1
       if (event.type === 'turn/start' || event.type === 'step/start') this.signal()
+      // turn/end closes the current task — broadcast directly (no debounce).
+      if (event.type === 'turn/end') {
+        const data = (event.data ?? {}) as { reason?: { kind?: string } }
+        const reason = data.reason?.kind ?? 'unknown'
+        this.emitTaskEnd(reason)
+      }
     }))
   }
 
@@ -90,6 +108,16 @@ export class TaskStartBroadcaster {
     this.lastSent = Date.now()
     const frame: TaskStartFrame = { type: 'task-start', task: this.task, at: this.lastSent }
     const payload = `event: ${TASK_START_EVENT}\ndata: ${JSON.stringify(frame)}\n\n`
+    for (const client of [...this.clients]) {
+      try { client.res.write(payload) } catch { this.clients.delete(client) }
+    }
+  }
+
+  /** Broadcast a `task-end` frame immediately (no debounce) so the GUI can show the completion toast. */
+  private emitTaskEnd(reason: string): void {
+    const now = Date.now()
+    const frame: TaskEndFrame = { type: 'task-end', task: this.task, reason, at: now }
+    const payload = `event: ${TASK_END_EVENT}\ndata: ${JSON.stringify(frame)}\n\n`
     for (const client of [...this.clients]) {
       try { client.res.write(payload) } catch { this.clients.delete(client) }
     }

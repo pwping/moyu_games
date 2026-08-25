@@ -1,6 +1,7 @@
 /**
  * Browser half of the SSE broadcast: wraps one EventSource to the host
- * `/api/moyu-games/events` stream and forwards each `task-start` frame.
+ * `/api/moyu-games/events` stream and forwards each `task-start` / `task-end`
+ * frame.
  *
  * EventSource auto-reconnects on a dropped connection, so a transient error
  * never needs manual re-connect; `disconnect()` is the only teardown.
@@ -14,14 +15,25 @@ export interface TaskStartFrame {
   at: number
 }
 
+/** A `task-end` frame pushed by the host when the current turn finishes. */
+export interface TaskEndFrame {
+  type: 'task-end'
+  task: number
+  reason: string
+  at: number
+}
+
 /** Handler invoked for every broadcast `task-start` frame. */
 export type TaskStartHandler = (frame: TaskStartFrame) => void
+/** Handler invoked for every broadcast `task-end` frame. */
+export type TaskEndHandler = (frame: TaskEndFrame) => void
 
 /** Optional observer for transport-level failures (auto-reconnect still applies). */
 export type TaskStreamErrorHandler = (error: unknown) => void
 
-/** SSE event name the host emits. */
+/** SSE event names the host emits. */
 const TASK_START_EVENT = 'task-start'
+const TASK_END_EVENT = 'task-end'
 
 /** A single recoverable SSE subscription. */
 export class TaskStartStream {
@@ -30,6 +42,7 @@ export class TaskStartStream {
   constructor(
     private readonly path: string,
     private readonly onTaskStart: TaskStartHandler,
+    private readonly onTaskEnd: TaskEndHandler = () => { /* noop */ },
     private readonly onError?: TaskStreamErrorHandler,
   ) {}
 
@@ -42,6 +55,14 @@ export class TaskStartStream {
       const raw = (event as MessageEvent<string>).data
       try {
         this.onTaskStart(JSON.parse(raw) as TaskStartFrame)
+      } catch {
+        // Ignore malformed frames; the stream stays healthy.
+      }
+    })
+    es.addEventListener(TASK_END_EVENT, (event) => {
+      const raw = (event as MessageEvent<string>).data
+      try {
+        this.onTaskEnd(JSON.parse(raw) as TaskEndFrame)
       } catch {
         // Ignore malformed frames; the stream stays healthy.
       }

@@ -18,8 +18,19 @@ export interface TaskStartFrame {
     task: number;
     at: number;
 }
+/** A task-end frame written to the SSE stream when the current turn finishes. */
+export interface TaskEndFrame {
+    type: 'task-end';
+    /** The same monotonic task id the matching start frame carried. */
+    task: number;
+    /** `completed` = normal end; anything else (error / aborted / ...) still counts. */
+    reason: string;
+    at: number;
+}
 /** Name of the SSE "task-start" event. */
 export declare const TASK_START_EVENT = "task-start";
+/** Name of the SSE "task-end" event. */
+export declare const TASK_END_EVENT = "task-end";
 /** Relative path of the SSE endpoint the browser connects to. */
 export declare const EVENTS_PATH = "/api/moyu-games/events";
 /** Owns the SSE subscriber set and the session/event subscription for one host instance. */
@@ -39,6 +50,8 @@ export declare class TaskStartBroadcaster {
     /** Broadcast a `task-start` frame to every live client (debounced). */
     signal(): void;
     private emit;
+    /** Broadcast a `task-end` frame immediately (no debounce) so the GUI can show the completion toast. */
+    private emitTaskEnd;
     /** Undo the session/event subscription and any pending debounce. */
     dispose(): void;
 }

@@ -77,14 +77,25 @@ function clearGameKeys(game: GameId): void {
   }
 }
 
-/** Subscribe to a controller's open state. */
-function useOpen(controller: GameController): boolean {
-  const [open, setOpen] = useState(() => controller.getSnapshot().open)
+/** Subscribe to a controller's full snapshot (open + pending task-end). */
+function useControllerSnapshot(controller: GameController): { open: boolean; taskEndPending: number | null } {
+  const [snap, setSnap] = useState(() => {
+    const s = controller.getSnapshot()
+    return { open: s.open, taskEndPending: s.taskEndPending }
+  })
   useEffect(
-    () => controller.subscribe(() => setOpen(controller.getSnapshot().open)),
+    () => controller.subscribe(() => {
+      const s = controller.getSnapshot()
+      setSnap({ open: s.open, taskEndPending: s.taskEndPending })
+    }),
     [controller],
   )
-  return open
+  return snap
+}
+
+/** @deprecated Use useControllerSnapshot instead. Read `open` from its return value. */
+function useOpen(controller: GameController): boolean {
+  return useControllerSnapshot(controller).open
 }
 
 /** Subscribe to the whole settings scope snapshot (status/value/writable). */
@@ -159,7 +170,28 @@ export type GameOverlayProps =
  */
 export function GameOverlay(props: GameOverlayProps) {
   const { t, controller, defaultSize, scope } = props
-  const open = useOpen(controller)
+  const snap = useControllerSnapshot(controller)
+  const open = snap.open
+  // taskEndPending 经 UI 呈现后必须 consume，避免 toast 永久挂着。
+  // 用一个本地 state 表示当前可见的 toast 任务号（null = 不显示），
+  // 切换任务 / 隐藏后再重开 / 超时时都会被 consume + 清空。
+  const [toastTask, setToastTask] = useState<number | null>(null)
+
+  // 1. Translate controller's pending → local toastTask, and consume it.
+  useEffect(() => {
+    if (snap.taskEndPending === null) return
+    if (snap.taskEndPending === toastTask) return
+    setToastTask(snap.taskEndPending)
+    controller.consumeTaskEnd()
+  }, [snap.taskEndPending, toastTask, controller])
+
+  // 2. Auto-dismiss the toast after a few seconds.
+  useEffect(() => {
+    if (toastTask === null) return
+    const id = window.setTimeout(() => setToastTask(null), 3500)
+    return () => window.clearTimeout(id)
+  }, [toastTask])
+
   const scopeSnap = useScopeSnapshot(scope)
   const auto = scopeSnap.value?.autoPopup ?? true
   const writable = scopeSnap.writable
@@ -310,6 +342,22 @@ export function GameOverlay(props: GameOverlayProps) {
                 ? <SchulteGrid t={t} open={open} defaultSize={defaultSize} />
                 : <MemoryGrid t={t} open={open} />
         }
+        {toastTask !== null ? (
+          <div
+            className="moyu-toast-wrap"
+            role="status"
+            aria-live="polite"
+            onClick={() => setToastTask(null)}
+          >
+            <div className="moyu-toast-card">
+              <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+                <path d="M12 2L4 7v5c0 5 3.2 9.2 8 10 4.8-.8 8-5 8-10V7l-8-5z" fill="none" stroke="var(--moyu-accent-strong)" strokeWidth="1.8" strokeLinejoin="round" />
+                <path d="M8.5 12.2l2.3 2.3 4.7-4.7" fill="none" stroke="var(--moyu-accent-strong)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              <span className="moyu-toast-text">任务执行完成，先去看一下完成效果吧</span>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   )

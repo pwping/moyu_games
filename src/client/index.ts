@@ -107,9 +107,13 @@ export function apply(ctx: ClientContext): void {
 
   // Auto-popup on task start (host SSE broadcast), gated on live prefs.
   // A manual close suppresses the popup until the NEXT task (new task id).
+  // The matching task-end frame always signals completion (regardless of
+  // auto-popup mode) so the overlay can show a "task done" toast.
   const stream = new TaskStartStream(EVENTS_PATH, (frame) => {
     if (!enabled() || !autoPopup()) return
     controller.onTaskStart(frame.task)
+  }, (frame) => {
+    controller.onTaskEnd(frame.task)
   })
   stream.connect()
   ctx.effect(() => () => stream.disconnect(), 'moyu-games: popup stream')

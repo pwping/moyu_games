@@ -13,6 +13,12 @@
 
 export interface GameControllerSnapshot {
   open: boolean
+  /**
+   * Non-null exactly when a task-end frame arrived and the toast has not yet
+   * been acknowledged / auto-dismissed. Carries the task id for correlation.
+   * Consumers (the overlay) set this back to null after presenting the toast.
+   */
+  taskEndPending: number | null
 }
 
 /** The window-state owner the foot action toggles and the overlay renders from. */
@@ -22,10 +28,12 @@ export class GameController {
   private task = 0
   /** Task id the user manually dismissed; auto-popup skips it until a new task. */
   private dismissedTask: number | null = null
+  /** Most recent task id whose `task-end` was received and not yet consumed. */
+  private taskEndPending: number | null = null
   private readonly listeners = new Set<() => void>()
 
   getSnapshot(): GameControllerSnapshot {
-    return { open: this.open }
+    return { open: this.open, taskEndPending: this.taskEndPending }
   }
 
   subscribe(fn: () => void): () => void {
@@ -40,9 +48,28 @@ export class GameController {
    */
   onTaskStart(task: number): void {
     this.task = task
-    if (this.dismissedTask === task) return
+    // A new start before the previous end was consumed just overrides the
+    // pending signal — a stale completion toast would be misleading.
+    this.taskEndPending = null
+    if (this.dismissedTask === task) { this.notify(); return }
     this.dismissedTask = null
     this.show()
+  }
+
+  /**
+   * A turn ended. Stash the task id so the overlay (even if currently
+   * hidden) can surface a completion toast next time it's rendered.
+   */
+  onTaskEnd(task: number): void {
+    this.taskEndPending = task
+    this.notify()
+  }
+
+  /** Called by the overlay after it has rendered (or decided to skip) the completion toast. */
+  consumeTaskEnd(): void {
+    if (this.taskEndPending === null) return
+    this.taskEndPending = null
+    this.notify()
   }
 
   /** Open the window (manual/footer entry). No-op if already open; always

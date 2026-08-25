@@ -58,6 +58,7 @@ export const STYLES = `
   transition: opacity 0.18s ease, visibility 0.18s;
 }
 .moyu-modal {
+  position: relative;
   pointer-events: auto;
   width: 440px; max-height: 88vh; overflow: auto;
   /* Overall 80% size. The transform is driven inline by the drag offset
@@ -139,6 +140,43 @@ export const STYLES = `
 .moyu-game-tab:hover { background: var(--moyu-accent-soft); color: var(--moyu-accent-strong); }
 .moyu-game-tab-active {
   background: var(--moyu-accent-soft); color: var(--moyu-accent-strong); border-color: var(--moyu-border);
+}
+
+/* 任务完成 toast：居中盖在游戏内容上。pointer-events: none 让卡片
+   外面的 wrap 透明可穿透，只有 .moyu-toast-card 本身接收点击。 */
+.moyu-toast-wrap {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 5;
+}
+.moyu-toast-card {
+  pointer-events: auto;
+  animation: moyu-toast-fade-in 0.25s ease-out;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 20px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid var(--moyu-border);
+  box-shadow: 0 12px 32px -12px rgba(23, 46, 33, 0.28), 0 4px 10px -4px rgba(23, 46, 33, 0.12);
+  max-width: 86%;
+  cursor: pointer;
+}
+.moyu-toast-text {
+  font-family: 'Nunito Sans', system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--moyu-accent-strong);
+  line-height: 1.4;
+}
+@keyframes moyu-toast-fade-in {
+  from { opacity: 0; transform: translateY(-6px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .moyu-board { padding: 6px 22px 22px; }
