@@ -1,6 +1,6 @@
 {
   "name": "moyu-games",
-  "description": "A 'slacking off' puzzle plugin for DeepSeek Harness: a digital Huarong Road (sliding-number-puzzle) window that pops up when a turn/step starts. Standalone DSH web plugin — install with `dsh plugin add moyu-games`.",
+  "description": "A 'slacking off' mini-games plugin for DeepSeek Harness: five casual games (sliding-number puzzle, Sudoku, snake, Schulte grid, number memory) that pop up when a turn starts, with auto-saved progress across sessions.",
   "version": "0.1.0",
   "type": "module",
   "engines": {
